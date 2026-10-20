@@ -50,6 +50,12 @@ jobs:
       SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
       # 签到成功是否也推送播报（可选，默认仅失败提醒）
       SUCCESS_NOTIFY: ${{ secrets.SUCCESS_NOTIFY }}
+      # 邮件通知（可选）：MAIL_PASS 为 SMTP 授权码，不是邮箱登录密码
+      MAIL_USER: ${{ secrets.MAIL_USER }}
+      MAIL_PASS: ${{ secrets.MAIL_PASS }}
+      MAIL_TO: ${{ secrets.MAIL_TO }}
+      MAIL_HOST: ${{ secrets.MAIL_HOST }}
+      MAIL_PORT: ${{ secrets.MAIL_PORT }}
 
     steps:
       - name: 检出仓库
@@ -106,6 +112,12 @@ jobs:
         # （摘要会长期留存于 Actions 页面，应避免暴露原始接口响应全文）
         run: |
           python scripts/summarize_result.py result.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 邮件通知（可选，默认仅失败时发送）
+        if: always()
+        # 脚本内部判断签到结果：默认仅失败发信；SUCCESS_NOTIFY=true 时成功也发。
+        # 未配置 MAIL_USER / MAIL_PASS / MAIL_TO 时静默跳过。
+        run: python scripts/notify_email.py result.json
 
       - name: 失败时终止任务（触发 GitHub 失败通知）
         if: steps.checkin.outcome != 'success'
