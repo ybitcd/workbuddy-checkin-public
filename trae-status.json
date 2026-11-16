@@ -1,0 +1,12 @@
+{
+  "time": "2026-11-16T06:38:51.652Z",
+  "status": {
+    "http": 200,
+    "code": 0,
+    "checked_in": true,
+    "credits": 100,
+    "enable": true,
+    "message": "success"
+  },
+  "result": "already_checked_in"
+}
