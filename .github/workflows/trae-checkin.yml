@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   checkin:
@@ -12,17 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
       - name: 查询并领取
         env:
           TRAE_TOKEN: ${{ secrets.TRAE_TOKEN }}
         run: |
-          if [ -z "$TRAE_TOKEN" ]; then
-            echo "::error::缺少 TRAE_TOKEN"
-            exit 1
-          fi
+          set -o pipefail
           cat > /tmp/trae_checkin.js <<'JS'
+          const fs = require('fs');
+          const token = process.env.TRAE_TOKEN || '';
+          const out = { time: new Date().toISOString() };
           const headers = {
-            'Authorization': 'Cloud-IDE-JWT ' + process.env.TRAE_TOKEN,
+            'Authorization': 'Cloud-IDE-JWT ' + token,
             'Content-Type': 'application/json',
             'X-User-Region': 'CN',
           };
@@ -31,39 +34,51 @@ jobs:
 
           async function post(url) {
             const r = await fetch(url, { method: 'POST', headers, body: '{}' });
-            let j = {};
+            let j;
             try { j = await r.json(); } catch (e) { j = { raw: 'non-json' }; }
             return { http: r.status, json: j };
           }
 
-          (async () => {
-            const s = await post(STATUS);
-            console.log('STATUS http=' + s.http + ' code=' + s.json.code +
-              ' checked_in=' + s.json.checked_in + ' credits=' + s.json.credits +
-              ' enable=' + s.json.enable);
+          function save() {
+            fs.writeFileSync('trae-status.json', JSON.stringify(out, null, 2));
+          }
 
-            if (s.json.code !== 0) {
-              console.log('RESULT auth_failed msg=' + (s.json.message || ''));
-              process.exit(1);
-            }
-            if (s.json.checked_in === true) {
-              console.log('RESULT already_checked_in credits=' + s.json.credits);
-              return;
-            }
-            if (s.json.enable === false) {
-              console.log('RESULT checkin_disabled');
-              process.exit(2);
-            }
+          (async () => {
+            if (!token) { out.result = 'no_token'; save(); process.exit(1); }
+            const s = await post(STATUS);
+            out.status = {
+              http: s.http, code: s.json.code, checked_in: s.json.checked_in,
+              credits: s.json.credits, enable: s.json.enable, message: s.json.message
+            };
+            console.log('STATUS ' + JSON.stringify(out.status));
+
+            if (s.json.code !== 0) { out.result = 'auth_failed'; save(); process.exit(1); }
+            if (s.json.checked_in === true) { out.result = 'already_checked_in'; save(); return; }
+            if (s.json.enable === false) { out.result = 'checkin_disabled'; save(); process.exit(2); }
+
             const c = await post(CLAIM);
-            console.log('CLAIM http=' + c.http + ' code=' + c.json.code +
-              ' msg=' + (c.json.message || '') +
-              ' credits=' + (c.json.data ? c.json.data.credits : '-'));
-            if (c.json.code === 0) {
-              console.log('RESULT claimed_ok');
-            } else {
-              console.log('RESULT claim_failed');
-              process.exit(1);
-            }
-          })();
+            out.claim = {
+              http: c.http, code: c.json.code, message: c.json.message,
+              credits: c.json.data ? c.json.data.credits : null
+            };
+            console.log('CLAIM ' + JSON.stringify(out.claim));
+            out.result = c.json.code === 0 ? 'claimed_ok' : 'claim_failed';
+            save();
+            if (c.json.code !== 0) process.exit(1);
+          })().catch((e) => {
+            out.result = 'error';
+            out.error = e.message;
+            try { save(); } catch (x) {}
+            process.exit(1);
+          });
           JS
-          node /tmp/trae_checkin.js | tee -a "$GITHUB_STEP_SUMMARY"
+          node /tmp/trae_checkin.js
+
+      - name: 提交状态文件
+        if: always()
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git add trae-status.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "chore: trae checkin status"
+          git push || true
