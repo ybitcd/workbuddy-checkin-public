@@ -1,12 +1,18 @@
 {
-  "time": "2026-11-16T06:38:51.652Z",
+  "time": "2026-11-17T06:15:43.395Z",
   "status": {
     "http": 200,
     "code": 0,
-    "checked_in": true,
+    "checked_in": false,
     "credits": 100,
     "enable": true,
     "message": "success"
   },
-  "result": "already_checked_in"
+  "claim": {
+    "http": 200,
+    "code": 9004,
+    "message": "The submitted order parameters are incorrect. Please try placing the order again",
+    "credits": null
+  },
+  "result": "claim_failed"
 }
